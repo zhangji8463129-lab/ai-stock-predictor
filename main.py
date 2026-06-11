@@ -4,25 +4,34 @@ from email.mime.text import MIMEText
 from datetime import datetime
 
 # =====================
-# 获取数据
+# 安全获取数据
 # =====================
 
 def get_price(ticker):
     try:
         hist = yf.Ticker(ticker).history(period="2d")
+        if hist.empty or len(hist) < 2:
+            return None, None
         return hist["Close"].iloc[-1], hist["Close"].iloc[-2]
     except:
         return None, None
 
+def safe_compare(a, b):
+    if a is None or b is None:
+        return 0
+    return a - b
+
+# =====================
+# 获取数据
+# =====================
+
 def get_data():
     data = {}
 
-    # 指数
     data["nasdaq"], data["nasdaq_prev"] = get_price("^IXIC")
     data["vix"], data["vix_prev"] = get_price("^VIX")
     data["tnx"], data["tnx_prev"] = get_price("^TNX")
 
-    # AI核心股
     data["nvda"], data["nvda_prev"] = get_price("NVDA")
     data["amd"], data["amd_prev"] = get_price("AMD")
     data["avgo"], data["avgo_prev"] = get_price("AVGO")
@@ -30,16 +39,16 @@ def get_data():
     return data
 
 # =====================
-# 工具函数
+# 涨跌幅
 # =====================
 
 def change(cur, prev):
-    if cur and prev:
-        return (cur - prev) / prev * 100
-    return 0
+    if cur is None or prev is None:
+        return 0
+    return (cur - prev) / prev * 100
 
 # =====================
-# AI板块强度
+# AI强度
 # =====================
 
 def ai_strength(data):
@@ -58,21 +67,20 @@ def ai_strength(data):
         return "中性"
 
 # =====================
-# 风险检测（关键）
+# 风险检测（修复版）
 # =====================
 
 def risk_check(data):
     risk = 0
 
-    # VIX上升
-    if data["vix"] > data["vix_prev"]:
-        risk += 1
+    if data["vix"] and data["vix_prev"]:
+        if data["vix"] > data["vix_prev"]:
+            risk += 1
 
-    # 美债上升
-    if data["tnx"] > data["tnx_prev"]:
-        risk += 1
+    if data["tnx"] and data["tnx_prev"]:
+        if data["tnx"] > data["tnx_prev"]:
+            risk += 1
 
-    # AI走弱
     if ai_strength(data) == "弱":
         risk += 2
 
@@ -84,55 +92,48 @@ def risk_check(data):
         return "正常"
 
 # =====================
-# 趋势 + 周期
+# 趋势（容错）
 # =====================
 
 def trend():
-    hist = yf.Ticker("^IXIC").history(period="5d")
-    if hist["Close"].iloc[-1] > hist["Close"].mean():
-        return "上升"
-    else:
-        return "下降"
+    try:
+        hist = yf.Ticker("^IXIC").history(period="5d")
+        if hist.empty:
+            return "未知"
+        return "上升" if hist["Close"].iloc[-1] > hist["Close"].mean() else "下降"
+    except:
+        return "未知"
+
+# =====================
+# 周期
+# =====================
 
 def weekly_bias():
-    hist = yf.Ticker("^IXIC").history(period="20d")
-    if hist["Close"].iloc[-1] > hist["Close"].mean():
-        return "进攻周"
-    else:
-        return "防守周"
+    try:
+        hist = yf.Ticker("^IXIC").history(period="20d")
+        if hist.empty:
+            return "未知"
+        return "进攻周" if hist["Close"].iloc[-1] > hist["Close"].mean() else "防守周"
+    except:
+        return "未知"
 
 # =====================
-# 决策引擎（核心）
-# =====================
-
-def decision(prob, risk, strength):
-    if risk == "🚨 高风险":
-        return "❌ 空仓/观望"
-
-    if prob > 70 and strength == "强":
-        return "🔥 加仓"
-
-    if prob > 60:
-        return "🟡 小仓位"
-
-    return "⚖️ 观望"
-
-# =====================
-# 概率模型
+# 预测
 # =====================
 
 def predict(data):
     score = 0
 
-    if data["vix"] < 18:
+    if data["vix"] and data["vix"] < 18:
         score += 2
-    elif data["vix"] > 22:
+    elif data["vix"] and data["vix"] > 22:
         score -= 2
 
-    if data["tnx"] < data["tnx_prev"]:
-        score += 2
-    else:
-        score -= 1
+    if data["tnx"] and data["tnx_prev"]:
+        if data["tnx"] < data["tnx_prev"]:
+            score += 2
+        else:
+            score -= 1
 
     strength = ai_strength(data)
 
@@ -147,25 +148,33 @@ def predict(data):
     return prob, strength
 
 # =====================
+# 决策
+# =====================
+
+def decision(prob, risk, strength):
+    if risk == "🚨 高风险":
+        return "❌ 空仓/观望"
+    if prob > 70 and strength == "强":
+        return "🔥 加仓"
+    if prob > 60:
+        return "🟡 小仓位"
+    return "⚖️ 观望"
+
+# =====================
 # 报告
 # =====================
 
 def report(prob, data, trend_val, week, strength, risk, action):
     return f"""
-AI终极交易决策系统（{datetime.now().strftime('%Y-%m-%d')}）
+AI交易系统 V6（{datetime.now().strftime('%Y-%m-%d')}）
 
-【市场结构】
 趋势：{trend_val}
 周期：{week}
+风险：{risk}
 
-【风险评估】
-风险等级：{risk}
+概率：{prob}%
+AI强度：{strength}
 
-【核心判断】
-上涨概率：{prob}%
-AI板块：{strength}
-
-【关键数据】
 VIX：{data['vix']}
 美债：{data['tnx']}
 
@@ -173,28 +182,31 @@ NVDA：{data['nvda']}
 AMD：{data['amd']}
 AVGO：{data['avgo']}
 
-【最终决策】
-{action}
+操作：{action}
 """
 
 # =====================
-# 邮件
+# 邮件（加保护）
 # =====================
 
 def send_email(content):
-    sender = "1024158718@qq.com"
-    password = "flpfjztznvbbbbdb"
-    receiver = "1024158718@qq.com"
+    try:
+        sender = "1024158718@qq.com"
+        password = "flpfjztznvbbbbdb"
+        receiver = "1024158718@qq.com"
 
-    msg = MIMEText(content, "plain", "utf-8")
-    msg["Subject"] = "AI交易决策 V6"
-    msg["From"] = sender
-    msg["To"] = receiver
+        msg = MIMEText(content, "plain", "utf-8")
+        msg["Subject"] = "AI交易 V6"
+        msg["From"] = sender
+        msg["To"] = receiver
 
-    server = smtplib.SMTP_SSL("smtp.qq.com", 465)
-    server.login(sender, password)
-    server.sendmail(sender, receiver, msg.as_string())
-    server.quit()
+        server = smtplib.SMTP_SSL("smtp.qq.com", 465)
+        server.login(sender, password)
+        server.sendmail(sender, receiver, msg.as_string())
+        server.quit()
+
+    except Exception as e:
+        print("邮件发送失败:", e)
 
 # =====================
 # 主程序
@@ -213,3 +225,4 @@ if __name__ == "__main__":
 
     print(content)
     send_email(content)
+
