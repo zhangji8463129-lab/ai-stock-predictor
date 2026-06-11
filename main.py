@@ -77,9 +77,9 @@ VIX指数：{data['vix']}
 # =====================
 
 def send_email(content):
-    sender = "你的QQ邮箱@qq.com"
-    password = "你的授权码"
-    receiver = "你的QQ邮箱@qq.com"
+    sender = "1024158718@qq.com"
+    password = "flpfjztznvbbbbdb"
+    receiver = "1024158718@qq.com"
 
     msg = MIMEText(content, "plain", "utf-8")
     msg["Subject"] = "AI盘前预测"
